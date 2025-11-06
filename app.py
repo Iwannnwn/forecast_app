@@ -16,24 +16,7 @@ def load_model():
     model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
     return model
 
-@st.cache_resource
-def load_scalers():
-    """Load pre-trained scalers. If not exist, create dummy scalers."""
-    try:
-        with open("feature_scaler.pkl", "rb") as f:
-            feature_scaler = pickle.load(f)
-        with open("target_scaler.pkl", "rb") as f:
-            target_scaler = pickle.load(f)
-        return feature_scaler, target_scaler
-    except FileNotFoundError:
-        st.warning("⚠️ Scaler files tidak ditemukan. Menggunakan default scaler.")
-        # Create default scalers (perlu disesuaikan dengan training data)
-        feature_scaler = MinMaxScaler(feature_range=(0, 1))
-        target_scaler = MinMaxScaler(feature_range=(0, 1))
-        return feature_scaler, target_scaler
-
 model = load_model()
-feature_scaler, target_scaler = load_scalers()
 
 # ==========================================
 # ⚙️ CONFIG
@@ -142,64 +125,47 @@ if uploaded_file is not None:
         )
     else:
         last_seq = df[feature_cols].values[-SEQ_LENGTH:]
-        
-        # ==========================================
-        # 🔧 SCALING INPUT DATA (CRITICAL!)
-        # ==========================================
+        last_seq = np.expand_dims(last_seq, axis=0)  # (1, 30, 28)
+
         try:
-            last_seq_scaled = feature_scaler.transform(last_seq)
-            last_seq_scaled = np.expand_dims(last_seq_scaled, axis=0)  # (1, 30, 26)
-            
-            # ==========================================
-            # 📈 PREDIKSI
-            # ==========================================
-            pred_scaled = model.predict(last_seq_scaled)
-            
-            # ==========================================
-            # 🔄 INVERSE TRANSFORM (CRITICAL!)
-            # ==========================================
-            pred_value = target_scaler.inverse_transform(pred_scaled)[0, 0]
-            
-        except Exception as scaling_error:
-            st.error(f"❌ Error saat scaling/prediksi: {scaling_error}")
-            # Fallback: prediksi tanpa scaling (hasil akan berbeda!)
-            st.warning("⚠️ Menggunakan prediksi tanpa scaling (hasil mungkin tidak akurat)")
-            last_seq_unscaled = np.expand_dims(last_seq, axis=0)
-            pred_value = float(model.predict(last_seq_unscaled).flatten()[0])
-        
-        next_date = df["tanggal"].max() + timedelta(days=1)
+            pred = model.predict(last_seq)
+            pred_value = float(pred.flatten()[0])
+            next_date = df["tanggal"].max() + timedelta(days=1)
 
-        # ===========================
-        # HASIL PREDIKSI
-        # ===========================
-        st.subheader("📊 Hasil Prediksi")
-        st.success(f"Prediksi permintaan untuk {next_date.strftime('%Y-%m-%d')}: **{pred_value:,.2f} unit**")
+            # ===========================
+            # HASIL PREDIKSI
+            # ===========================
+            st.subheader("📊 Hasil Prediksi")
+            st.success(f"Prediksi permintaan untuk {next_date.strftime('%Y-%m-%d')}: **{pred_value:,.2f} unit**")
 
-        # ===========================
-        # VISUALISASI
-        # ===========================
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(df["tanggal"], df["kuantitas"], label="Data Historis", marker="o")
-        ax.scatter(next_date, pred_value, color="red", label="Prediksi Hari Berikutnya", zorder=5)
-        ax.legend()
-        ax.set_xlabel("Tanggal")
-        ax.set_ylabel("Permintaan (unit)")
-        ax.set_title("Prediksi Permintaan Produk Mixtro")
-        st.pyplot(fig)
+            # ===========================
+            # VISUALISASI
+            # ===========================
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(df["tanggal"], df["kuantitas"], label="Data Historis", marker="o")
+            ax.scatter(next_date, pred_value, color="red", label="Prediksi Hari Berikutnya", zorder=5)
+            ax.legend()
+            ax.set_xlabel("Tanggal")
+            ax.set_ylabel("Permintaan (unit)")
+            ax.set_title("Prediksi Permintaan Produk Mixtro")
+            st.pyplot(fig)
 
-        # ===========================
-        # DOWNLOAD HASIL
-        # ===========================
-        result_df = pd.DataFrame({
-            "tanggal": [next_date],
-            "prediksi_kuantitas": [pred_value]
-        })
-        st.download_button(
-            "⬇️ Download hasil prediksi",
-            result_df.to_csv(index=False).encode("utf-8"),
-            file_name="hasil_prediksi.csv",
-            mime="text/csv"
-        )
+            # ===========================
+            # DOWNLOAD HASIL
+            # ===========================
+            result_df = pd.DataFrame({
+                "tanggal": [next_date],
+                "prediksi_kuantitas": [pred_value]
+            })
+            st.download_button(
+                "⬇️ Download hasil prediksi",
+                result_df.to_csv(index=False).encode("utf-8"),
+                file_name="hasil_prediksi.csv",
+                mime="text/csv"
+            )
+
+        except Exception as e:
+            st.error(f"❌ Terjadi error saat prediksi: {e}")
 
 else:
     st.info("⬆️ Silakan upload file CSV terlebih dahulu.")
