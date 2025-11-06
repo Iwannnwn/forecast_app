@@ -197,7 +197,7 @@ if uploaded_file is not None:
             with col1:
                 st.metric("📅 Tanggal Prediksi", next_date.strftime('%d/%m/%Y'))
             with col2:
-                st.metric("📦 Prediksi Permintaan", f"{pred_value:,.2f} unit")
+                st.metric("📦 Prediksi Permintaan", f"{pred_value:,.2f} Ton")
             
             st.success(f"✅ Prediksi permintaan untuk {next_date.strftime('%d/%m/%Y')}: **{pred_value:,.2f} Ton**")
             
@@ -230,7 +230,7 @@ if uploaded_file is not None:
             
             # Plot prediksi
             ax.scatter(next_date, pred_value, color="red", s=100, 
-                      label=f"Prediksi: {pred_value:,.0f} unit", zorder=5)
+                      label=f"Prediksi: {pred_value:,.0f} Ton", zorder=5)
             
             ax.legend(fontsize=12)
             ax.set_xlabel("Tanggal", fontsize=12)
@@ -274,3 +274,4 @@ if uploaded_file is not None:
 
 else:
     st.info("⬆️ Silakan upload file CSV terlebih dahulu.")
+
