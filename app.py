@@ -30,7 +30,7 @@ def load_model_and_scalers():
             st.warning("⚠️ feature_scaler.pkl tidak ditemukan. Akan membuat scaler dummy.")
             feature_scaler = MinMaxScaler(feature_range=(0, 1))
             # Fit dengan data dummy agar scaler bisa digunakan
-            dummy_data = np.random.rand(100, 26)  # 26 fitur
+            dummy_data = np.random.rand(100, 28)  # 28 fitur sesuai training
             feature_scaler.fit(dummy_data)
             
         # Coba load target scaler  
@@ -50,7 +50,7 @@ def load_model_and_scalers():
         # Fallback: buat scaler dummy
         feature_scaler = MinMaxScaler(feature_range=(0, 1))
         target_scaler = MinMaxScaler(feature_range=(0, 1))
-        dummy_data = np.random.rand(100, 26)
+        dummy_data = np.random.rand(100, 28)  # 28 fitur sesuai training
         dummy_target = np.random.rand(100, 1)
         feature_scaler.fit(dummy_data)
         target_scaler.fit(dummy_target)
@@ -90,9 +90,13 @@ if uploaded_file is not None:
     df["tanggal"] = pd.to_datetime(df["tanggal"], format="%d/%m/%Y", errors="coerce")
     df = df.dropna(subset=["tanggal"])
     df = df.sort_values("tanggal").reset_index(drop=True)
-    df["Kuantitas_capped"] = df["kuantitas"]
+    
+    # ⚠️ CRITICAL: OUTLIER CAPPING SAMA SEPERTI TRAINING
+    # Capping outliers ke 8.0 (sama seperti hybrid approach di training)
+    df["Kuantitas_capped"] = df["kuantitas"].clip(lower=0, upper=8.0)
 
     st.write(f"📅 Jumlah data mentah terbaca: **{len(df)} baris**")
+    st.info(f"🔧 Outlier capping applied: kuantitas di-cap ke maksimal 8.0 Ton (sesuai training)")
 
     # ==========================================
     # 🔧 FEATURE ENGINEERING (selaras dengan training)
@@ -106,15 +110,16 @@ if uploaded_file is not None:
     df["is_month_end"] = (df["tanggal"].dt.day > 25).astype(int)
     df["is_quarter_end"] = df["tanggal"].dt.month.isin([3, 6, 9, 12]).astype(int)
 
-    # Log transform kuantitas
-    df["Kuantitas_log"] = np.log1p(df["kuantitas"])
+    # Log transform kuantitas - GUNAKAN KUANTITAS_CAPPED
+    df["Kuantitas_log"] = np.log1p(df["Kuantitas_capped"])
 
-    # Outlier detection sederhana
-    q1, q3 = df["kuantitas"].quantile([0.25, 0.75])
+    # Outlier detection - GUNAKAN KUANTITAS_CAPPED
+    q1, q3 = df["Kuantitas_capped"].quantile([0.25, 0.75])
     iqr = q3 - q1
     lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
-    df["is_outlier"] = ((df["kuantitas"] < lower) | (df["kuantitas"] > upper)).astype(int)
-    df["outlier_magnitude"] = np.where(df["is_outlier"] == 1, abs(df["kuantitas"] - df["kuantitas"].median()), 0)
+    df["is_outlier"] = ((df["Kuantitas_capped"] < lower) | (df["Kuantitas_capped"] > upper)).astype(int)
+    df["outlier_magnitude"] = np.where(df["is_outlier"] == 1, 
+                                       abs(df["Kuantitas_capped"] - df["Kuantitas_capped"].median()), 0)
     df["outlier_rolling_count"] = df["is_outlier"].rolling(window=30, min_periods=1).sum()
 
     # Cyclical encoding
@@ -123,20 +128,20 @@ if uploaded_file is not None:
     df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
     df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
 
-    # Lag features
+    # Lag features - GUNAKAN KUANTITAS_CAPPED
     for lag in [1, 2, 3, 7, 14]:
-        df[f"lag_{lag}"] = df["kuantitas"].shift(lag)
+        df[f"lag_{lag}"] = df["Kuantitas_capped"].shift(lag)
 
-    # Rolling statistics
+    # Rolling statistics - GUNAKAN KUANTITAS_CAPPED
     for window in [7, 14]:
-        df[f"rolling_mean_{window}"] = df["kuantitas"].rolling(window=window, min_periods=1).mean()
-        df[f"rolling_std_{window}"] = df["kuantitas"].rolling(window=window, min_periods=1).std()
-        df[f"rolling_min_{window}"] = df["kuantitas"].rolling(window=window, min_periods=1).min()
-        df[f"rolling_max_{window}"] = df["kuantitas"].rolling(window=window, min_periods=1).max()
+        df[f"rolling_mean_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).mean()
+        df[f"rolling_std_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).std()
+        df[f"rolling_min_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).min()
+        df[f"rolling_max_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).max()
 
-    # Difference features
-    df["diff_1"] = df["kuantitas"].diff()
-    df["diff_7"] = df["kuantitas"].diff(7)
+    # Difference features - GUNAKAN KUANTITAS_CAPPED
+    df["diff_1"] = df["Kuantitas_capped"].diff()
+    df["diff_7"] = df["Kuantitas_capped"].diff(7)
 
     # Cleaning NaN & Inf
     df = df.replace([np.inf, -np.inf], np.nan).fillna(0).reset_index(drop=True)
@@ -171,7 +176,7 @@ if uploaded_file is not None:
         # ⚠️ SCALING INPUT DATA - CRITICAL STEP
         st.info("🔧 Melakukan scaling pada input data...")
         last_seq_scaled = feature_scaler.transform(last_seq_raw)
-        last_seq_scaled = np.expand_dims(last_seq_scaled, axis=0)  # (1, 30, 26)
+        last_seq_scaled = np.expand_dims(last_seq_scaled, axis=0)  # (1, 30, 28)
         
         # Prediksi dengan data yang sudah di-scale
         try:
@@ -194,7 +199,7 @@ if uploaded_file is not None:
             with col2:
                 st.metric("📦 Prediksi Permintaan", f"{pred_value:,.2f} unit")
             
-            st.success(f"✅ Prediksi permintaan untuk {next_date.strftime('%d/%m/%Y')}: **{pred_value:,.2f} unit**")
+            st.success(f"✅ Prediksi permintaan untuk {next_date.strftime('%d/%m/%Y')}: **{pred_value:,.2f} Ton**")
             
             # Tampilkan info teknis
             with st.expander("ℹ️ Info Teknis Prediksi"):
@@ -204,6 +209,13 @@ if uploaded_file is not None:
                 st.write(f"• Hasil sudah di-inverse transform: ✅")
                 st.write(f"• Range data input (min-max): [{last_seq_raw.min():.2f} - {last_seq_raw.max():.2f}]")
                 st.write(f"• Range data scaled (min-max): [{last_seq_scaled.min():.4f} - {last_seq_scaled.max():.4f}]")
+                
+                # Debug info tambahan
+                st.write("**🔍 Debug Info:**")
+                st.write(f"• Kuantitas_capped terakhir: {df['Kuantitas_capped'].tail(5).tolist()}")
+                st.write(f"• Target scaler range: 0.0 - 8.0 Ton")
+                st.write(f"• Prediksi scaled: {pred_scaled.flatten()[0]:.6f}")
+                st.write(f"• Data preprocessing: SAMA dengan training model ✅")
 
             # ===========================
             # VISUALISASI
@@ -213,8 +225,8 @@ if uploaded_file is not None:
             
             # Plot data historis (30 hari terakhir untuk clarity)
             recent_data = df.tail(min(60, len(df)))
-            ax.plot(recent_data["tanggal"], recent_data["kuantitas"], 
-                   label="Data Historis", marker="o", linewidth=2, alpha=0.8)
+            ax.plot(recent_data["tanggal"], recent_data["Kuantitas_capped"], 
+                   label="Data Historis (Capped)", marker="o", linewidth=2, alpha=0.8)
             
             # Plot prediksi
             ax.scatter(next_date, pred_value, color="red", s=100, 
@@ -222,7 +234,7 @@ if uploaded_file is not None:
             
             ax.legend(fontsize=12)
             ax.set_xlabel("Tanggal", fontsize=12)
-            ax.set_ylabel("Permintaan (unit)", fontsize=12)
+            ax.set_ylabel("Permintaan (Ton)", fontsize=12)
             ax.set_title("Prediksi Permintaan Produk Mixtro (PT Petrokimia Gresik)", fontsize=14)
             ax.grid(True, alpha=0.3)
             plt.xticks(rotation=45)
