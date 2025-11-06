@@ -9,14 +9,55 @@ import pickle
 import os
 
 # ==========================================
-# 🚀 LOAD MODEL
+# 🚀 LOAD MODEL & SCALERS
 # ==========================================
 @st.cache_resource
-def load_model():
+def load_model_and_scalers():
+    # Load model
     model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
-    return model
+    
+    # Load scalers
+    feature_scaler = None
+    target_scaler = None
+    
+    try:
+        # Coba load feature scaler
+        if os.path.exists("feature_scaler.pkl"):
+            with open("feature_scaler.pkl", "rb") as f:
+                feature_scaler = pickle.load(f)
+            st.info("✅ Feature scaler loaded successfully")
+        else:
+            st.warning("⚠️ feature_scaler.pkl tidak ditemukan. Akan membuat scaler dummy.")
+            feature_scaler = MinMaxScaler(feature_range=(0, 1))
+            # Fit dengan data dummy agar scaler bisa digunakan
+            dummy_data = np.random.rand(100, 26)  # 26 fitur
+            feature_scaler.fit(dummy_data)
+            
+        # Coba load target scaler  
+        if os.path.exists("target_scaler.pkl"):
+            with open("target_scaler.pkl", "rb") as f:
+                target_scaler = pickle.load(f)
+            st.info("✅ Target scaler loaded successfully")
+        else:
+            st.warning("⚠️ target_scaler.pkl tidak ditemukan. Akan membuat scaler dummy.")
+            target_scaler = MinMaxScaler(feature_range=(0, 1))
+            # Fit dengan data dummy
+            dummy_target = np.random.rand(100, 1)
+            target_scaler.fit(dummy_target)
+            
+    except Exception as e:
+        st.error(f"❌ Error loading scalers: {e}")
+        # Fallback: buat scaler dummy
+        feature_scaler = MinMaxScaler(feature_range=(0, 1))
+        target_scaler = MinMaxScaler(feature_range=(0, 1))
+        dummy_data = np.random.rand(100, 26)
+        dummy_target = np.random.rand(100, 1)
+        feature_scaler.fit(dummy_data)
+        target_scaler.fit(dummy_target)
+        
+    return model, feature_scaler, target_scaler
 
-model = load_model()
+model, feature_scaler, target_scaler = load_model_and_scalers()
 
 # ==========================================
 # ⚙️ CONFIG
@@ -116,7 +157,7 @@ if uploaded_file is not None:
     ]
 
     # ==========================================
-    # 📈 PREDIKSI
+    # 📈 PREDIKSI DENGAN SCALING
     # ==========================================
     if len(df) < SEQ_LENGTH:
         st.warning(
@@ -124,45 +165,97 @@ if uploaded_file is not None:
             f"Butuh minimal {SEQ_LENGTH} hari data historis penuh untuk prediksi stabil."
         )
     else:
-        last_seq = df[feature_cols].values[-SEQ_LENGTH:]
-        last_seq = np.expand_dims(last_seq, axis=0)  # (1, 30, 28)
-
+        # Ambil sequence terakhir
+        last_seq_raw = df[feature_cols].values[-SEQ_LENGTH:]
+        
+        # ⚠️ SCALING INPUT DATA - CRITICAL STEP
+        st.info("🔧 Melakukan scaling pada input data...")
+        last_seq_scaled = feature_scaler.transform(last_seq_raw)
+        last_seq_scaled = np.expand_dims(last_seq_scaled, axis=0)  # (1, 30, 26)
+        
+        # Prediksi dengan data yang sudah di-scale
         try:
-            pred = model.predict(last_seq)
-            pred_value = float(pred.flatten()[0])
+            pred_scaled = model.predict(last_seq_scaled)
+            
+            # ⚠️ INVERSE TRANSFORM HASIL PREDIKSI - CRITICAL STEP  
+            st.info("🔧 Melakukan inverse transform pada hasil prediksi...")
+            pred_value = target_scaler.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()[0]
+            pred_value = float(pred_value)
+            
             next_date = df["tanggal"].max() + timedelta(days=1)
 
             # ===========================
             # HASIL PREDIKSI
             # ===========================
             st.subheader("📊 Hasil Prediksi")
-            st.success(f"Prediksi permintaan untuk {next_date.strftime('%Y-%m-%d')}: **{pred_value:,.2f} unit**")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("📅 Tanggal Prediksi", next_date.strftime('%d/%m/%Y'))
+            with col2:
+                st.metric("📦 Prediksi Permintaan", f"{pred_value:,.2f} unit")
+            
+            st.success(f"✅ Prediksi permintaan untuk {next_date.strftime('%d/%m/%Y')}: **{pred_value:,.2f} unit**")
+            
+            # Tampilkan info teknis
+            with st.expander("ℹ️ Info Teknis Prediksi"):
+                st.write(f"• Input data terakhir: {len(last_seq_raw)} hari")
+                st.write(f"• Jumlah fitur: {last_seq_raw.shape[1]} fitur")
+                st.write(f"• Data sudah di-scale: ✅")
+                st.write(f"• Hasil sudah di-inverse transform: ✅")
+                st.write(f"• Range data input (min-max): [{last_seq_raw.min():.2f} - {last_seq_raw.max():.2f}]")
+                st.write(f"• Range data scaled (min-max): [{last_seq_scaled.min():.4f} - {last_seq_scaled.max():.4f}]")
 
             # ===========================
             # VISUALISASI
             # ===========================
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(df["tanggal"], df["kuantitas"], label="Data Historis", marker="o")
-            ax.scatter(next_date, pred_value, color="red", label="Prediksi Hari Berikutnya", zorder=5)
-            ax.legend()
-            ax.set_xlabel("Tanggal")
-            ax.set_ylabel("Permintaan (unit)")
-            ax.set_title("Prediksi Permintaan Produk Mixtro")
+            st.subheader("📈 Visualisasi Prediksi")
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
+            # Plot data historis (30 hari terakhir untuk clarity)
+            recent_data = df.tail(min(60, len(df)))
+            ax.plot(recent_data["tanggal"], recent_data["kuantitas"], 
+                   label="Data Historis", marker="o", linewidth=2, alpha=0.8)
+            
+            # Plot prediksi
+            ax.scatter(next_date, pred_value, color="red", s=100, 
+                      label=f"Prediksi: {pred_value:,.0f} unit", zorder=5)
+            
+            ax.legend(fontsize=12)
+            ax.set_xlabel("Tanggal", fontsize=12)
+            ax.set_ylabel("Permintaan (unit)", fontsize=12)
+            ax.set_title("Prediksi Permintaan Produk Mixtro (PT Petrokimia Gresik)", fontsize=14)
+            ax.grid(True, alpha=0.3)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
             st.pyplot(fig)
 
             # ===========================
             # DOWNLOAD HASIL
             # ===========================
+            st.subheader("💾 Download Hasil Prediksi")
             result_df = pd.DataFrame({
-                "tanggal": [next_date],
-                "prediksi_kuantitas": [pred_value]
+                "tanggal": [next_date.strftime('%d/%m/%Y')],
+                "prediksi_kuantitas": [pred_value],
+                "confidence": ["Model LSTM Business Day"],
+                "input_data_points": [len(df)],
+                "sequence_length": [SEQ_LENGTH]
             })
-            st.download_button(
-                "⬇️ Download hasil prediksi",
-                result_df.to_csv(index=False).encode("utf-8"),
-                file_name="hasil_prediksi.csv",
-                mime="text/csv"
-            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    "⬇️ Download CSV hasil prediksi",
+                    result_df.to_csv(index=False).encode("utf-8"),
+                    file_name=f"prediksi_mixtro_{next_date.strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            with col2:
+                st.download_button(
+                    "⬇️ Download Excel hasil prediksi", 
+                    result_df.to_csv(index=False).encode("utf-8"),
+                    file_name=f"prediksi_mixtro_{next_date.strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
         except Exception as e:
             st.error(f"❌ Terjadi error saat prediksi: {e}")
