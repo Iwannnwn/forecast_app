@@ -18,7 +18,7 @@ model = load_model()
 # ==========================================
 # ⚙️ CONFIG
 # ==========================================
-SEQ_LENGTH = 14  # panjang urutan waktu (window)
+SEQ_LENGTH = 30  # panjang urutan waktu (window)
 st.set_page_config(page_title="Prediksi Mixtro", page_icon="📊", layout="wide")
 st.title("📊 Prediksi Permintaan Produk Mixtro (PT Petrokimia Gresik)")
 st.write("Model LSTM dengan 28 fitur waktu, lag, rolling, dan outlier pattern.")
@@ -166,3 +166,4 @@ if uploaded_file is not None:
 
 else:
     st.info("⬆️ Silakan upload file CSV terlebih dahulu.")
+
