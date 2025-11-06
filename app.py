@@ -30,30 +30,18 @@ def load_model():
 
 @st.cache_resource
 def load_scalers():
-    """Load pre-trained scalers. If not exist, create dummy scalers fitted to sample data."""
+    """Load pre-trained scalers. If not exist, create dummy scalers."""
     try:
         with open("feature_scaler.pkl", "rb") as f:
             feature_scaler = pickle.load(f)
         with open("target_scaler.pkl", "rb") as f:
             target_scaler = pickle.load(f)
-        st.success("✅ Scalers loaded from saved files")
         return feature_scaler, target_scaler
     except FileNotFoundError:
-        st.warning("⚠️ Scaler files tidak ditemukan. Membuat default scaler...")
-        
-        # Create default scalers dengan fitting data dummy yang reasonable
+        st.warning("⚠️ Scaler files tidak ditemukan. Menggunakan default scaler.")
+        # Create default scalers (perlu disesuaikan dengan training data)
         feature_scaler = MinMaxScaler(feature_range=(0, 1))
         target_scaler = MinMaxScaler(feature_range=(0, 1))
-        
-        # Fit dengan dummy data yang representatif
-        # Asumsi: features dalam range yang masuk akal
-        dummy_features = np.random.uniform(-5, 20, (100, 26))  # 26 features
-        dummy_target = np.random.uniform(0, 50, (100, 1))      # target kuantitas
-        
-        feature_scaler.fit(dummy_features)
-        target_scaler.fit(dummy_target)
-        
-        st.info("ℹ️ Menggunakan default scaler (hasil prediksi mungkin kurang akurat)")
         return feature_scaler, target_scaler
 
 model = load_model()
