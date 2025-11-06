@@ -13,20 +13,8 @@ import os
 # ==========================================
 @st.cache_resource
 def load_model():
-    try:
-        model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
-        return model
-    except Exception as e:
-        st.error(f"❌ Error loading model: {e}")
-        st.info("🔄 Model akan dimuat ulang dengan TensorFlow versi terbaru...")
-        # Fallback untuk compatibility dengan TF versi baru
-        model = tf.keras.models.load_model("best_lstm_model_businessday.h5", 
-                                         compile=False,
-                                         custom_objects={
-                                             'mse': tf.keras.losses.MeanSquaredError(),
-                                             'mean_squared_error': tf.keras.losses.MeanSquaredError()
-                                         })
-        return model
+    model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
+    return model
 
 @st.cache_resource
 def load_scalers():
