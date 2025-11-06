@@ -96,12 +96,12 @@ if uploaded_file is not None:
     df["Kuantitas_capped"] = df["kuantitas"].clip(lower=0, upper=8.0)
 
     st.write(f"📅 Jumlah data mentah terbaca: **{len(df)} baris**")
-    st.info(f"🔧 Outlier capping applied: kuantitas di-cap ke maksimal 8.0 Ton (sesuai training)")
+    st.info(f"🔧 Outlier capping applied")
 
     # ==========================================
     # 🔧 FEATURE ENGINEERING (selaras dengan training)
     # ==========================================
-    st.info("🔧 Melakukan feature engineering otomatis sesuai model training...")
+    st.info("🔧 Melakukan feature engineering...")
 
     # Fitur waktu dasar
     df["day_of_week"] = df["tanggal"].dt.dayofweek
