@@ -13,23 +13,47 @@ import os
 # ==========================================
 @st.cache_resource
 def load_model():
-    model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
-    return model
+    try:
+        model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
+        return model
+    except Exception as e:
+        st.error(f"❌ Error loading model: {e}")
+        st.info("🔄 Model akan dimuat ulang dengan TensorFlow versi terbaru...")
+        # Fallback untuk compatibility dengan TF versi baru
+        model = tf.keras.models.load_model("best_lstm_model_businessday.h5", 
+                                         compile=False,
+                                         custom_objects={
+                                             'mse': tf.keras.losses.MeanSquaredError(),
+                                             'mean_squared_error': tf.keras.losses.MeanSquaredError()
+                                         })
+        return model
 
 @st.cache_resource
 def load_scalers():
-    """Load pre-trained scalers. If not exist, create dummy scalers."""
+    """Load pre-trained scalers. If not exist, create dummy scalers fitted to sample data."""
     try:
         with open("feature_scaler.pkl", "rb") as f:
             feature_scaler = pickle.load(f)
         with open("target_scaler.pkl", "rb") as f:
             target_scaler = pickle.load(f)
+        st.success("✅ Scalers loaded from saved files")
         return feature_scaler, target_scaler
     except FileNotFoundError:
-        st.warning("⚠️ Scaler files tidak ditemukan. Menggunakan default scaler.")
-        # Create default scalers (perlu disesuaikan dengan training data)
+        st.warning("⚠️ Scaler files tidak ditemukan. Membuat default scaler...")
+        
+        # Create default scalers dengan fitting data dummy yang reasonable
         feature_scaler = MinMaxScaler(feature_range=(0, 1))
         target_scaler = MinMaxScaler(feature_range=(0, 1))
+        
+        # Fit dengan dummy data yang representatif
+        # Asumsi: features dalam range yang masuk akal
+        dummy_features = np.random.uniform(-5, 20, (100, 26))  # 26 features
+        dummy_target = np.random.uniform(0, 50, (100, 1))      # target kuantitas
+        
+        feature_scaler.fit(dummy_features)
+        target_scaler.fit(dummy_target)
+        
+        st.info("ℹ️ Menggunakan default scaler (hasil prediksi mungkin kurang akurat)")
         return feature_scaler, target_scaler
 
 model = load_model()
@@ -167,8 +191,6 @@ if uploaded_file is not None:
             last_seq_unscaled = np.expand_dims(last_seq, axis=0)
             pred_value = float(model.predict(last_seq_unscaled).flatten()[0])
         
-        next_date = df["tanggal"].max() + timedelta(days=1)
-
         next_date = df["tanggal"].max() + timedelta(days=1)
 
         # ===========================
