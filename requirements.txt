@@ -1,41 +1,24 @@
 # ==========================================
-# 📦 PYTHON REQUIREMENTS
+# 📦 PRODUCTION REQUIREMENTS (MINIMAL)
 # Aplikasi Prediksi Mixtro - PT Petrokimia Gresik
 # ==========================================
 
-# Core Framework
-streamlit>=1.28.0,<2.0.0
+# CRITICAL DEPENDENCIES (WAJIB)
+streamlit>=1.28.0
+tensorflow>=2.13.0,<2.16.0
+pandas>=1.5.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
 
-# Data Processing & Analysis
-pandas>=1.5.0,<2.1.0
-numpy>=1.24.0,<1.27.0
+# FILE SUPPORT
+openpyxl>=3.1.0
 
-# Machine Learning & Deep Learning
-tensorflow>=2.13.0,<2.16.0    # Fixed version (2.20.0 was invalid)
-scikit-learn>=1.3.0,<1.4.0
+# OPTIONAL DEPENDENCIES (bisa di-comment jika error)
+# seaborn>=0.12.0      # Optional untuk styling plots
+# plotly>=5.15.0       # Optional untuk interactive plots
 
-# Data Visualization
-matplotlib>=3.7.0,<3.9.0
-seaborn>=0.12.0,<0.14.0
-
-# TensorFlow Dependencies (required for model loading)
-protobuf>=3.19.0,<4.24.0
-h5py>=3.9.0,<3.11.0
-
-# File Processing Support
-openpyxl>=3.1.0,<3.2.0       # Excel file support (.xlsx)
-xlsxwriter>=3.1.0,<3.2.0     # Excel writing support
-
-# Additional Utilities (Built-in Python modules - no installation needed)
-# - datetime (timedelta import)
-# - pickle (scaler loading) 
-# - os (file existence checks)
-# - warnings (filter warnings)
-
-# Optional Enhancements
-Pillow>=9.5.0,<11.0.0        # Image processing (for better plots)
-plotly>=5.15.0,<5.18.0       # Interactive plotting (future enhancement)
-
-# Development & Debugging (optional)
-# ipython>=8.0.0             # Better interactive experience
-# jupyter>=1.0.0             # Notebook support
+# NOTES:
+# - Seaborn TIDAK WAJIB (app tetap jalan tanpa seaborn)
+# - Jika seaborn tidak tersedia, app akan skip styling tambahan
+# - Semua fitur utama tetap berfungsi tanpa seaborn
