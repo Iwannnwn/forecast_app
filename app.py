@@ -1,15 +1,46 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import tensorflow as tf
 import matplotlib.pyplot as plt
-import seaborn as sns
 from datetime import timedelta
-from sklearn.preprocessing import MinMaxScaler
 import pickle
 import os
 import warnings
 warnings.filterwarnings('ignore')
+
+# ==========================================
+# 🔧 DEPENDENCY IMPORTS WITH ERROR HANDLING
+# ==========================================
+
+# TensorFlow import with fallback
+try:
+    import tensorflow as tf
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+    st.error("❌ TensorFlow tidak tersedia. Install dengan: `pip install tensorflow>=2.13.0`")
+
+# Scikit-learn import with fallback  
+try:
+    from sklearn.preprocessing import MinMaxScaler
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    st.error("❌ scikit-learn tidak tersedia. Install dengan: `pip install scikit-learn`")
+
+# Seaborn import - OPTIONAL (tidak critical untuk aplikasi)
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+    # Set seaborn style jika tersedia
+    sns.set_style("whitegrid")
+except ImportError:
+    SEABORN_AVAILABLE = False
+    # Don't show warning since seaborn is optional for this app
+
+# Set matplotlib backend untuk Streamlit
+import matplotlib
+matplotlib.use('Agg')
 
 # ==========================================
 # 🎨 PAGE CONFIGURATION & STYLING
@@ -21,7 +52,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS untuk mempercantik tampilan
+# Custom CSS untuk tampilan yang lebih baik
 st.markdown("""
 <style>
     .main-header {
@@ -54,19 +85,6 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         margin: 0.5rem 0;
     }
-    .prediction-button {
-        background-color: #4299e1;
-        color: white;
-        border: none;
-        border-radius: 5px;
-        padding: 0.5rem 1rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background-color 0.3s;
-    }
-    .prediction-button:hover {
-        background-color: #3182ce;
-    }
     .info-box {
         background-color: #e6fffa;
         border: 1px solid #38d9a9;
@@ -88,6 +106,14 @@ st.markdown("""
 st.markdown('<div class="main-header">🏭 Prediksi Permintaan Produk Mixtro<br><small>PT Petrokimia Gresik</small></div>', unsafe_allow_html=True)
 
 # ==========================================
+# ⚠️ DEPENDENCY CHECK
+# ==========================================
+if not TF_AVAILABLE or not SKLEARN_AVAILABLE:
+    st.error("❌ Dependencies tidak lengkap! Silakan install requirements yang hilang.")
+    st.info("💡 Gunakan command: `pip install tensorflow>=2.13.0 scikit-learn pandas numpy matplotlib streamlit`")
+    st.stop()
+
+# ==========================================
 # 🚀 LOAD MODEL & SCALERS
 # ==========================================
 @st.cache_resource
@@ -95,8 +121,12 @@ def load_model_and_scalers():
     """Load model LSTM dan scalers dengan error handling yang robust"""
     try:
         # Load model
-        model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
-        st.success("✅ Model LSTM berhasil dimuat")
+        if os.path.exists("best_lstm_model_businessday.h5"):
+            model = tf.keras.models.load_model("best_lstm_model_businessday.h5", compile=False)
+            st.success("✅ Model LSTM berhasil dimuat")
+        else:
+            st.warning("⚠️ Model file tidak ditemukan. Menjalankan mode demo.")
+            model = None
         
         # Load scalers
         feature_scaler = None
@@ -126,7 +156,7 @@ def load_model_and_scalers():
             
     except Exception as e:
         st.error(f"❌ Error loading model/scalers: {e}")
-        # Fallback: buat model dan scaler dummy untuk demo
+        # Fallback untuk demo
         model = None
         feature_scaler = MinMaxScaler(feature_range=(0, 1))
         target_scaler = MinMaxScaler(feature_range=(0, 1))
@@ -173,7 +203,7 @@ st.sidebar.info(f"""
 **Model**: LSTM dengan 28 fitur  
 **Sequence Length**: {SEQ_LENGTH} hari  
 **Target**: Kuantitas permintaan (Ton)  
-**Preprocessing**: Outlier capping, scaling, feature engineering
+**Mode**: {'Production' if model is not None else 'Demo'}
 """)
 
 # ==========================================
@@ -282,14 +312,14 @@ def create_future_features(last_row, next_date, predicted_value=None):
         
         # Update rolling features (simplified approach)
         for window in [7, 14]:
-            future_row[f"rolling_mean_{window}"] = predicted_value  # Simplified
-            future_row[f"rolling_std_{window}"] = 0.1  # Simplified
-            future_row[f"rolling_min_{window}"] = min(predicted_value, future_row[f"rolling_min_{window}"])
-            future_row[f"rolling_max_{window}"] = max(predicted_value, future_row[f"rolling_max_{window}"])
+            future_row[f"rolling_mean_{window}"] = predicted_value
+            future_row[f"rolling_std_{window}"] = 0.1
+            future_row[f"rolling_min_{window}"] = min(predicted_value, future_row.get(f"rolling_min_{window}", predicted_value))
+            future_row[f"rolling_max_{window}"] = max(predicted_value, future_row.get(f"rolling_max_{window}", predicted_value))
         
         # Update difference features
-        future_row["diff_1"] = predicted_value - future_row["lag_1"] if future_row["lag_1"] != 0 else 0
-        future_row["diff_7"] = predicted_value - future_row["lag_7"] if future_row["lag_7"] != 0 else 0
+        future_row["diff_1"] = predicted_value - future_row.get("lag_1", predicted_value)
+        future_row["diff_7"] = predicted_value - future_row.get("lag_7", predicted_value)
     
     return future_row
 
@@ -297,15 +327,16 @@ def predict_multiple_days(model, feature_scaler, target_scaler, df, feature_cols
     """Prediksi untuk beberapa hari ke depan dengan iterative approach"""
     
     if model is None:
-        # Return dummy predictions for demo
+        # Return demo predictions
         start_date = df["tanggal"].max() + timedelta(days=1)
         predictions = []
         for i in range(days_ahead):
             pred_date = start_date + timedelta(days=i)
-            # Generate realistic dummy prediction
+            # Generate realistic demo prediction
             base_value = df["Kuantitas_capped"].tail(30).mean()
+            seasonal_factor = 1 + 0.1 * np.sin(2 * np.pi * pred_date.dayofweek / 7)
             noise = np.random.normal(0, 0.1) * base_value
-            pred_value = max(0, base_value + noise)
+            pred_value = max(0, base_value * seasonal_factor + noise)
             predictions.append({"tanggal": pred_date, "prediksi": pred_value})
         return predictions
     
@@ -313,44 +344,49 @@ def predict_multiple_days(model, feature_scaler, target_scaler, df, feature_cols
     current_df = df.copy()
     
     for day in range(days_ahead):
-        # Ambil sequence terakhir
-        last_seq_raw = current_df[feature_cols].values[-SEQ_LENGTH:]
-        
-        # Scale input
-        last_seq_scaled = feature_scaler.transform(last_seq_raw)
-        last_seq_scaled = np.expand_dims(last_seq_scaled, axis=0)
-        
-        # Prediksi
-        pred_scaled = model.predict(last_seq_scaled, verbose=0)
-        pred_value = target_scaler.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()[0]
-        pred_value = float(max(0, pred_value))  # Ensure non-negative
-        
-        # Tanggal prediksi
-        next_date = current_df["tanggal"].max() + timedelta(days=1)
-        
-        # Simpan hasil prediksi
-        predictions.append({
-            "tanggal": next_date,
-            "prediksi": pred_value
-        })
-        
-        # Update dataframe untuk prediksi hari berikutnya
-        if day < days_ahead - 1:  # Tidak perlu update untuk hari terakhir
-            last_row = current_df[feature_cols].iloc[-1].to_dict()
-            future_features = create_future_features(last_row, next_date, pred_value)
+        try:
+            # Ambil sequence terakhir
+            last_seq_raw = current_df[feature_cols].values[-SEQ_LENGTH:]
             
-            # Buat row baru
-            new_row = {
+            # Scale input
+            last_seq_scaled = feature_scaler.transform(last_seq_raw)
+            last_seq_scaled = np.expand_dims(last_seq_scaled, axis=0)
+            
+            # Prediksi
+            pred_scaled = model.predict(last_seq_scaled, verbose=0)
+            pred_value = target_scaler.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()[0]
+            pred_value = float(max(0, pred_value))  # Ensure non-negative
+            
+            # Tanggal prediksi
+            next_date = current_df["tanggal"].max() + timedelta(days=1)
+            
+            # Simpan hasil prediksi
+            predictions.append({
                 "tanggal": next_date,
-                "kuantitas": pred_value,
-                "business_day": 1,  # Assume business day
-                "Kuantitas_capped": pred_value
-            }
-            new_row.update(future_features)
+                "prediksi": pred_value
+            })
             
-            # Append ke dataframe
-            new_row_df = pd.DataFrame([new_row])
-            current_df = pd.concat([current_df, new_row_df], ignore_index=True)
+            # Update dataframe untuk prediksi hari berikutnya
+            if day < days_ahead - 1:  # Tidak perlu update untuk hari terakhir
+                last_row = current_df[feature_cols].iloc[-1].to_dict()
+                future_features = create_future_features(last_row, next_date, pred_value)
+                
+                # Buat row baru
+                new_row = {
+                    "tanggal": next_date,
+                    "kuantitas": pred_value,
+                    "business_day": 1,  # Assume business day
+                    "Kuantitas_capped": pred_value
+                }
+                new_row.update(future_features)
+                
+                # Append ke dataframe
+                new_row_df = pd.DataFrame([new_row])
+                current_df = pd.concat([current_df, new_row_df], ignore_index=True)
+                
+        except Exception as e:
+            st.error(f"❌ Error dalam prediksi hari ke-{day+1}: {e}")
+            break
     
     return predictions
 
@@ -365,14 +401,20 @@ if uploaded_file is not None:
             df.columns = [c.lower().strip() for c in df.columns]
 
             # Validasi kolom
-            if not {"tanggal", "kuantitas", "business_day"}.issubset(df.columns):
-                st.error("❌ Kolom wajib: tanggal, kuantitas, business_day")
+            required_cols = {"tanggal", "kuantitas", "business_day"}
+            if not required_cols.issubset(df.columns):
+                st.error(f"❌ Kolom wajib: {', '.join(required_cols)}")
+                st.error(f"Kolom yang tersedia: {', '.join(df.columns)}")
                 st.stop()
 
             # Parse tanggal
             df["tanggal"] = pd.to_datetime(df["tanggal"], format="%d/%m/%Y", errors="coerce")
             df = df.dropna(subset=["tanggal"])
             df = df.sort_values("tanggal").reset_index(drop=True)
+            
+            if len(df) == 0:
+                st.error("❌ Tidak ada data valid setelah parsing tanggal.")
+                st.stop()
             
             # Feature engineering
             df = perform_feature_engineering(df)
@@ -510,7 +552,6 @@ if uploaded_file is not None:
                 with col2:
                     st.markdown("**📊 Perbandingan dengan Data Historis**")
                     hist_avg = df["Kuantitas_capped"].tail(30).mean()
-                    hist_std = df["Kuantitas_capped"].tail(30).std()
                     
                     comparison_df = pd.DataFrame({
                         "Metrik": ["Rata-rata 30 hari terakhir", "Prediksi rata-rata", "Selisih", "% Perubahan"],
@@ -518,7 +559,7 @@ if uploaded_file is not None:
                             f"{hist_avg:.2f} Ton",
                             f"{avg_prediction:.2f} Ton", 
                             f"{avg_prediction - hist_avg:+.2f} Ton",
-                            f"{((avg_prediction - hist_avg) / hist_avg * 100):+.1f}%"
+                            f"{((avg_prediction - hist_avg) / hist_avg * 100):+.1f}%" if hist_avg > 0 else "N/A"
                         ]
                     })
                     st.dataframe(comparison_df, hide_index=True)
@@ -536,7 +577,7 @@ if uploaded_file is not None:
                 download_df = download_df[["tanggal_str", "hari", "prediksi", "model_info", "data_points_used", "sequence_length"]]
                 download_df.columns = ["Tanggal", "Hari", "Prediksi_Ton", "Model_Info", "Data_Points", "Sequence_Length"]
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 
                 with col1:
                     csv_data = download_df.to_csv(index=False).encode("utf-8")
@@ -548,16 +589,6 @@ if uploaded_file is not None:
                     )
                 
                 with col2:
-                    # Simple Excel format using CSV
-                    st.download_button(
-                        "📊 Download Excel",
-                        csv_data,
-                        file_name=f"prediksi_mixtro_{days_to_predict}hari_{df['tanggal'].max().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                
-                with col3:
-                    # JSON format
                     json_data = download_df.to_json(orient='records', indent=2).encode('utf-8')
                     st.download_button(
                         "🔗 Download JSON",
@@ -565,34 +596,13 @@ if uploaded_file is not None:
                         file_name=f"prediksi_mixtro_{days_to_predict}hari_{df['tanggal'].max().strftime('%Y%m%d')}.json",
                         mime="application/json"
                     )
-                
-                # ==========================================
-                # ℹ️ TECHNICAL INFO
-                # ==========================================
-                with st.expander("🔧 Informasi Teknis"):
-                    tech_col1, tech_col2 = st.columns(2)
-                    
-                    with tech_col1:
-                        st.markdown("**Model Configuration:**")
-                        st.write(f"• Sequence Length: {SEQ_LENGTH} hari")
-                        st.write(f"• Jumlah Fitur: 28 fitur")
-                        st.write(f"• Outlier Capping: 0.0 - 8.0 Ton")
-                        st.write(f"• Scaling: MinMax (0-1)")
-                        st.write(f"• Prediction Method: {'Single-step' if days_to_predict == 1 else 'Multi-step iterative'}")
-                    
-                    with tech_col2:
-                        st.markdown("**Data Processing:**")
-                        st.write(f"• Input Data Points: {len(df):,}")
-                        st.write(f"• Feature Engineering: ✅")
-                        st.write(f"• Data Scaling: ✅") 
-                        st.write(f"• Inverse Transform: ✅")
-                        st.write(f"• Data Range: [{df['Kuantitas_capped'].min():.2f} - {df['Kuantitas_capped'].max():.2f}] Ton")
 
         else:
             st.warning(f"⚠️ Data hanya {len(df)} hari. Diperlukan minimal {SEQ_LENGTH} hari untuk prediksi yang akurat.")
             
     except Exception as e:
         st.error(f"❌ Terjadi error: {str(e)}")
+        st.error("💡 Pastikan format data sesuai requirements dan semua dependencies terinstall.")
         
 else:
     # ==========================================
@@ -621,8 +631,6 @@ else:
            - Visualisasi grafik
            - Analisis statistik
            - Opsi download hasil
-        
-        4. **💾 Download**: Unduh hasil dalam format CSV, Excel, atau JSON
         """)
     
     with col2:
@@ -632,29 +640,26 @@ else:
         st.success("✅ 28 Fitur Engineering")
         st.success("✅ Visualisasi Interaktif")
         st.success("✅ Export Multi-Format")
-        st.success("✅ Analisis Statistik")
+        st.success("✅ Error Handling Robust")
         
-        st.markdown("### ⚡ Spesifikasi Model")
-        st.info("""
-        **Architecture**: LSTM Neural Network  
-        **Features**: 28 engineered features  
-        **Window**: 30-day sequence  
-        **Target**: Daily demand (Ton)  
-        **Optimization**: Business day aware
+        st.markdown("### ⚡ Status Dependencies")
+        st.info(f"""
+        **TensorFlow**: {'✅ Tersedia' if TF_AVAILABLE else '❌ Tidak Tersedia'}  
+        **Scikit-learn**: {'✅ Tersedia' if SKLEARN_AVAILABLE else '❌ Tidak Tersedia'}  
+        **Seaborn**: {'✅ Tersedia' if SEABORN_AVAILABLE else '⚠️ Optional'}  
+        **Mode**: {'Production' if model is not None else 'Demo'}
         """)
 
-    st.markdown('<div class="sub-header">📈 Contoh Data Format</div>', unsafe_allow_html=True)
-    
     # Contoh format data
+    st.markdown('<div class="sub-header">📈 Contoh Data Format</div>', unsafe_allow_html=True)
     example_data = pd.DataFrame({
         'tanggal': ['01/01/2024', '02/01/2024', '03/01/2024', '04/01/2024', '05/01/2024'],
         'kuantitas': [2.5, 3.1, 2.8, 4.2, 1.9],
         'business_day': [1, 1, 1, 1, 1]
     })
-    
     st.dataframe(example_data, hide_index=True, use_container_width=True)
     
-    # Disclaimer
+    # Footer
     st.markdown("---")
     st.markdown("""
     <div style='text-align: center; color: #666; font-size: 0.9em; padding: 1rem;'>
