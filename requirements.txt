@@ -1,24 +1,6 @@
-# ==========================================
-# 📦 PRODUCTION REQUIREMENTS (MINIMAL)
-# Aplikasi Prediksi Mixtro - PT Petrokimia Gresik
-# ==========================================
-
-# CRITICAL DEPENDENCIES (WAJIB)
-streamlit>=1.28.0
-tensorflow>=2.13.0,<2.16.0
-pandas>=1.5.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-matplotlib>=3.7.0
-
-# FILE SUPPORT
-openpyxl>=3.1.0
-
-# OPTIONAL DEPENDENCIES (bisa di-comment jika error)
-# seaborn>=0.12.0      # Optional untuk styling plots
-# plotly>=5.15.0       # Optional untuk interactive plots
-
-# NOTES:
-# - Seaborn TIDAK WAJIB (app tetap jalan tanpa seaborn)
-# - Jika seaborn tidak tersedia, app akan skip styling tambahan
-# - Semua fitur utama tetap berfungsi tanpa seaborn
+streamlit==1.28.1
+tensorflow==2.13.0
+pandas==1.5.3
+numpy==1.24.3
+scikit-learn==1.3.0
+matplotlib==3.7.1
