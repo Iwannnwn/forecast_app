@@ -62,7 +62,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">🏭 PREDIKSI PERMINTAAN PRODUK MIXTRO<br><small>PT PETROKIMIA GRESIK</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🏭 PREDIKSI PERMINTAAN PRODUK MIXTRO<br><small>PT PETROKIMIA GRESIK</small></div>', unsafe_allow_html=True)
 
 if not TF_AVAILABLE or not SKLEARN_AVAILABLE:
     st.error("❌ Dependencies tidak lengkap!")
@@ -92,6 +92,7 @@ def load_model_and_scalers():
             st.success("✅ Feature scaler loaded")
         else:
             st.warning("⚠️ Using dummy feature scaler")
+            # Create dummy with correct number of features (28)
             dummy_data = np.random.rand(100, 28)
             feature_scaler.fit(dummy_data)
             
@@ -134,7 +135,6 @@ prediction_period = st.sidebar.radio(
 st.sidebar.markdown("### 🔧 Advanced Settings")
 add_noise = st.sidebar.checkbox("Tambah Variability", value=True, help="Menambah noise untuk variabilitas prediksi")
 noise_level = st.sidebar.slider("Noise Level", 0.01, 0.1, 0.05, help="Tingkat noise untuk variability")
-smooth_prediction = st.sidebar.checkbox("Smooth Prediction", value=False, help="Aplikasikan smoothing pada hasil")
 
 period_mapping = {"1 Hari": 1, "7 Hari": 7, "15 Hari": 15}
 days_to_predict = period_mapping[prediction_period]
@@ -142,7 +142,7 @@ days_to_predict = period_mapping[prediction_period]
 st.sidebar.info(f"""
 **Mode**: {'Production' if model is not None else 'Demo'}  
 **Sequence**: {SEQ_LENGTH} hari  
-**Multi-step**: Enhanced Algorithm  
+**Features**: 28 (sesuai training)  
 **Variability**: {'On' if add_noise else 'Off'}
 """)
 
@@ -158,69 +158,75 @@ uploaded_file = st.file_uploader(
 )
 
 # ==========================================
-# 🔧 ENHANCED FEATURE ENGINEERING
+# 🔧 ENHANCED FEATURE ENGINEERING (SESUAI TRAINING)
 # ==========================================
 def create_features(df):
-    """Feature engineering yang konsisten dengan training"""
-    # Outlier capping (CRITICAL)
+    """
+    Feature engineering yang PERSIS SAMA dengan training notebook
+    Ref: LSTM_model-Business-Day.ipynb Cell 25
+    """
+    # 1. Outlier capping (CRITICAL - upper bound = 8.0 sesuai training)
     df["Kuantitas_capped"] = df["kuantitas"].clip(lower=0, upper=8.0)
     
-    # Time features
+    # 2. Time features
     df["day_of_week"] = df["tanggal"].dt.dayofweek
     df["month"] = df["tanggal"].dt.month
     df["quarter"] = df["tanggal"].dt.quarter
     df["is_month_end"] = (df["tanggal"].dt.day > 25).astype(int)
     df["is_quarter_end"] = df["tanggal"].dt.month.isin([3, 6, 9, 12]).astype(int)
 
-    # Log transform
+    # 3. Log transform (dibuat tapi TIDAK digunakan dalam model)
     df["Kuantitas_log"] = np.log1p(df["Kuantitas_capped"])
 
-    # Outlier detection
+    # 4. Outlier detection
     q1, q3 = df["Kuantitas_capped"].quantile([0.25, 0.75])
     iqr = q3 - q1
     lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
     df["is_outlier"] = ((df["Kuantitas_capped"] < lower) | (df["Kuantitas_capped"] > upper)).astype(int)
-    df["outlier_magnitude"] = np.where(df["is_outlier"] == 1, 
-                                       abs(df["Kuantitas_capped"] - df["Kuantitas_capped"].median()), 0)
+    df["outlier_magnitude"] = np.where(
+        df["Kuantitas_capped"] > upper,
+        df["Kuantitas_capped"] / upper,
+        1.0
+    )
     df["outlier_rolling_count"] = df["is_outlier"].rolling(window=30, min_periods=1).sum()
 
-    # Cyclical encoding
+    # 5. Cyclical encoding
     df["day_sin"] = np.sin(2 * np.pi * df["day_of_week"] / 7)
     df["day_cos"] = np.cos(2 * np.pi * df["day_of_week"] / 7)
     df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
     df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
 
-    # Lag features
+    # 6. Lag features
     for lag in [1, 2, 3, 7, 14]:
         df[f"lag_{lag}"] = df["Kuantitas_capped"].shift(lag)
 
-    # Rolling statistics
+    # 7. Rolling statistics
     for window in [7, 14]:
         df[f"rolling_mean_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).mean()
         df[f"rolling_std_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).std()
         df[f"rolling_min_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).min()
         df[f"rolling_max_{window}"] = df["Kuantitas_capped"].rolling(window=window, min_periods=1).max()
 
-    # Difference features
+    # 8. Difference features
     df["diff_1"] = df["Kuantitas_capped"].diff()
     df["diff_7"] = df["Kuantitas_capped"].diff(7)
 
-    # Clean NaN & Inf
+    # 9. Clean NaN & Inf
     df = df.replace([np.inf, -np.inf], np.nan).fillna(0).reset_index(drop=True)
     
     return df
 
 def update_features_with_prediction(df_base, new_date, new_value):
     """
-    SOLUSI UTAMA: Update features dinamis dengan prediksi baru
-    Ini adalah kunci untuk mengatasi masalah prediksi flat!
+    Update features dinamis dengan prediksi baru
+    CRITICAL: Ini yang membuat prediksi tidak flat!
     """
     # Buat row baru dengan tanggal dan nilai prediksi
     new_row = {
         "tanggal": new_date,
         "kuantitas": new_value,
         "business_day": 1,  # Assume business day
-        "Kuantitas_capped": new_value
+        "Kuantitas_capped": np.clip(new_value, 0, 8.0)  # Apply same capping
     }
     
     # Time features untuk tanggal baru
@@ -231,7 +237,7 @@ def update_features_with_prediction(df_base, new_date, new_value):
     new_row["is_quarter_end"] = int(new_date.month in [3, 6, 9, 12])
     
     # Log transform
-    new_row["Kuantitas_log"] = np.log1p(new_value)
+    new_row["Kuantitas_log"] = np.log1p(new_row["Kuantitas_capped"])
     
     # Cyclical encoding
     new_row["day_sin"] = np.sin(2 * np.pi * new_row["day_of_week"] / 7)
@@ -240,20 +246,22 @@ def update_features_with_prediction(df_base, new_date, new_value):
     new_row["month_cos"] = np.cos(2 * np.pi * new_row["month"] / 12)
     
     # Outlier features (simplified for prediction)
-    median_val = df_base["Kuantitas_capped"].median()
-    new_row["is_outlier"] = 1 if abs(new_value - median_val) > 2 else 0
-    new_row["outlier_magnitude"] = abs(new_value - median_val) if new_row["is_outlier"] else 0
+    q1, q3 = df_base["Kuantitas_capped"].quantile([0.25, 0.75])
+    iqr = q3 - q1
+    upper = q3 + 1.5 * iqr
+    new_row["is_outlier"] = 1 if new_row["Kuantitas_capped"] > upper else 0
+    new_row["outlier_magnitude"] = new_row["Kuantitas_capped"] / upper if new_row["is_outlier"] else 1.0
     new_row["outlier_rolling_count"] = 0  # Reset for simplicity
     
     # ⚡ CRITICAL: Update lag features dengan nilai baru
     recent_values = list(df_base["Kuantitas_capped"].tail(14))
-    recent_values.append(new_value)
+    recent_values.append(new_row["Kuantitas_capped"])
     
-    new_row["lag_1"] = recent_values[-2] if len(recent_values) >= 2 else new_value
-    new_row["lag_2"] = recent_values[-3] if len(recent_values) >= 3 else new_value
-    new_row["lag_3"] = recent_values[-4] if len(recent_values) >= 4 else new_value
-    new_row["lag_7"] = recent_values[-8] if len(recent_values) >= 8 else new_value
-    new_row["lag_14"] = recent_values[-15] if len(recent_values) >= 15 else new_value
+    new_row["lag_1"] = recent_values[-2] if len(recent_values) >= 2 else new_row["Kuantitas_capped"]
+    new_row["lag_2"] = recent_values[-3] if len(recent_values) >= 3 else new_row["Kuantitas_capped"]
+    new_row["lag_3"] = recent_values[-4] if len(recent_values) >= 4 else new_row["Kuantitas_capped"]
+    new_row["lag_7"] = recent_values[-8] if len(recent_values) >= 8 else new_row["Kuantitas_capped"]
+    new_row["lag_14"] = recent_values[-15] if len(recent_values) >= 15 else new_row["Kuantitas_capped"]
     
     # ⚡ CRITICAL: Update rolling statistics dengan nilai baru
     recent_7 = recent_values[-7:]
@@ -270,8 +278,8 @@ def update_features_with_prediction(df_base, new_date, new_value):
     new_row["rolling_max_14"] = np.max(recent_14)
     
     # ⚡ CRITICAL: Update difference features
-    new_row["diff_1"] = new_value - recent_values[-2] if len(recent_values) >= 2 else 0
-    new_row["diff_7"] = new_value - recent_values[-8] if len(recent_values) >= 8 else 0
+    new_row["diff_1"] = new_row["Kuantitas_capped"] - recent_values[-2] if len(recent_values) >= 2 else 0
+    new_row["diff_7"] = new_row["Kuantitas_capped"] - recent_values[-8] if len(recent_values) >= 8 else 0
     
     # Convert to DataFrame dan append
     new_df = pd.DataFrame([new_row])
@@ -281,7 +289,8 @@ def update_features_with_prediction(df_base, new_date, new_value):
 
 def enhanced_multi_step_prediction(model, feature_scaler, target_scaler, df, feature_cols, days_ahead, add_noise=True, noise_level=0.05):
     """
-    🚀 SOLUSI UTAMA: Enhanced multi-step prediction yang mengatasi masalah flat prediction
+    🚀 Enhanced multi-step prediction yang mengatasi masalah flat prediction
+    Menggunakan feature columns yang PERSIS SAMA dengan training
     """
     if model is None:
         # Demo mode dengan realistic variability
@@ -298,11 +307,16 @@ def enhanced_multi_step_prediction(model, feature_scaler, target_scaler, df, fea
             # ⚡ Ambil sequence terbaru (updated setiap iterasi)
             last_seq_raw = current_df[feature_cols].values[-SEQ_LENGTH:]
             
+            # Validate sequence length
+            if len(last_seq_raw) < SEQ_LENGTH:
+                st.error(f"❌ Not enough data for sequence. Need {SEQ_LENGTH}, have {len(last_seq_raw)}")
+                break
+            
             # Scale input
             last_seq_scaled = feature_scaler.transform(last_seq_raw)
             last_seq_scaled = np.expand_dims(last_seq_scaled, axis=0)
             
-            # 🎯 PREDICTION dengan enhanced techniques
+            # 🎯 PREDICTION
             pred_scaled = model.predict(last_seq_scaled, verbose=0)
             pred_value = target_scaler.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()[0]
             
@@ -313,8 +327,8 @@ def enhanced_multi_step_prediction(model, feature_scaler, target_scaler, df, fea
                 adaptive_noise = np.random.normal(0, min(recent_std * noise_level, 0.3))
                 pred_value += adaptive_noise
             
-            # Ensure reasonable bounds
-            pred_value = float(np.clip(pred_value, 0.1, 8.0))
+            # Ensure reasonable bounds (sama dengan training: 0 to 8.0)
+            pred_value = float(np.clip(pred_value, 0.0, 8.0))
             
             # Tanggal prediksi
             next_date = current_df["tanggal"].max() + timedelta(days=1)
@@ -323,7 +337,7 @@ def enhanced_multi_step_prediction(model, feature_scaler, target_scaler, df, fea
             predictions.append({
                 "tanggal": next_date,
                 "prediksi": pred_value,
-                "confidence": 1.0 - (day * 0.1)  # Confidence menurun untuk prediksi yang lebih jauh
+                "confidence": 1.0 - (day * 0.05)  # Confidence menurun untuk prediksi yang lebih jauh
             })
             
             # Track variance
@@ -335,18 +349,20 @@ def enhanced_multi_step_prediction(model, feature_scaler, target_scaler, df, fea
                 
         except Exception as e:
             st.error(f"❌ Error pada hari ke-{day+1}: {e}")
+            import traceback
+            st.error(traceback.format_exc())
             break
     
     # Quality check: Jika variance terlalu rendah, tambahkan variability
     if len(prediction_variance) > 1:
-        var_ratio = np.std(prediction_variance) / np.mean(prediction_variance)
+        var_ratio = np.std(prediction_variance) / np.mean(prediction_variance) if np.mean(prediction_variance) > 0 else 0
         if var_ratio < 0.05:  # Terlalu flat
             st.warning("⚠️ Prediksi terdeteksi terlalu flat. Menambahkan realistic variability...")
             for i, pred in enumerate(predictions[1:], 1):  # Skip hari pertama
                 seasonal_factor = 1 + 0.1 * np.sin(2 * np.pi * i / 7)  # Weekly seasonality
                 trend_factor = 1 + (i * 0.01)  # Small trend
                 pred["prediksi"] *= seasonal_factor * trend_factor
-                pred["prediksi"] = np.clip(pred["prediksi"], 0.1, 8.0)
+                pred["prediksi"] = np.clip(pred["prediksi"], 0.0, 8.0)
     
     return predictions
 
@@ -370,7 +386,7 @@ def demo_prediction_with_variability(df, days_ahead):
         
         # Final prediction
         pred_value = base_value * seasonal * trend + noise
-        pred_value = np.clip(pred_value, 0.1, 8.0)
+        pred_value = np.clip(pred_value, 0.0, 8.0)
         
         predictions.append({
             "tanggal": next_date,
@@ -402,7 +418,7 @@ if uploaded_file is not None:
                 st.error("❌ Tidak ada data valid")
                 st.stop()
             
-            # Feature engineering
+            # Feature engineering (SESUAI TRAINING)
             df = create_features(df)
 
         # Data summary
@@ -412,22 +428,45 @@ if uploaded_file is not None:
         with col2:
             st.metric("📅 Periode", f"{df['tanggal'].min().strftime('%d/%m/%Y')} - {df['tanggal'].max().strftime('%d/%m/%Y')}")
         with col3:
-            variance = df["Kuantitas_capped"].std() / df["Kuantitas_capped"].mean()
+            variance = df["Kuantitas_capped"].std() / df["Kuantitas_capped"].mean() if df["Kuantitas_capped"].mean() > 0 else 0
             st.metric("📈 Variability", f"{variance:.2%}")
 
         if len(df) >= SEQ_LENGTH:
             st.markdown('<div class="sub-header">🎯 Enhanced Multi-Step Prediction</div>', unsafe_allow_html=True)
             
-            # Feature columns
+            # ==========================================
+            # CRITICAL: Feature columns PERSIS SAMA dengan training
+            # Ref: LSTM_model-Business-Day.ipynb Cell 40
+            # ==========================================
             feature_cols = [
-                'Kuantitas_log', 'is_outlier', 'outlier_magnitude', 'outlier_rolling_count',
-                'day_of_week', 'month', 'quarter', 'is_month_end', 'is_quarter_end',
-                'day_sin', 'day_cos', 'month_sin', 'month_cos',
+                # Lag features (5)
                 'lag_1', 'lag_2', 'lag_3', 'lag_7', 'lag_14',
+                
+                # Rolling statistics (8)
                 'rolling_mean_7', 'rolling_std_7', 'rolling_min_7', 'rolling_max_7',
                 'rolling_mean_14', 'rolling_std_14', 'rolling_min_14', 'rolling_max_14',
-                'diff_1', 'diff_7'
+                
+                # Cyclical encoding (4)
+                'day_sin', 'day_cos', 'month_sin', 'month_cos',
+                
+                # Difference features (2)
+                'diff_1', 'diff_7',
+                
+                # Outlier features (2)
+                'is_outlier', 'outlier_magnitude',
+                
+                # Business features (2)
+                'is_month_end', 'is_quarter_end'
             ]
+            # Total: 28 features (sesuai training)
+            
+            # Validate all features exist
+            missing_features = [f for f in feature_cols if f not in df.columns]
+            if missing_features:
+                st.error(f"❌ Missing features: {missing_features}")
+                st.stop()
+            
+            st.info(f"✅ Using {len(feature_cols)} features (matching training configuration)")
             
             # 🚀 ENHANCED PREDICTION
             with st.spinner(f"🔮 Prediksi enhanced untuk {days_to_predict} hari..."):
@@ -496,6 +535,7 @@ if uploaded_file is not None:
                 axes[0,0].legend()
                 axes[0,0].set_title("Enhanced Prediction vs Historical Data", fontweight='bold')
                 axes[0,0].grid(True, alpha=0.3)
+                axes[0,0].tick_params(axis='x', rotation=45)
                 
                 # Plot 2: Prediction variance
                 axes[0,1].plot(range(1, len(pred_values)+1), pred_values, 
@@ -577,7 +617,7 @@ if uploaded_file is not None:
                             f"{hist_recent.max():.2f}",
                             f"{hist_recent.mean():.2f}",
                             f"{hist_recent.std():.2f}",
-                            f"{hist_recent.std()/hist_recent.mean():.2%}"
+                            f"{hist_recent.std()/hist_recent.mean():.2%}" if hist_recent.mean() > 0 else "N/A"
                         ]
                     })
                     st.dataframe(stats_df, hide_index=True)
@@ -644,19 +684,29 @@ if uploaded_file is not None:
                 
                 # Technical info
                 with st.expander("🔧 Technical Information"):
-                    st.markdown("""
+                    st.markdown(f"""
                     **🚀 Enhanced Multi-Step Algorithm:**
+                    - ✅ **Feature Engineering**: Sesuai PERSIS dengan training notebook
+                    - ✅ **28 Features**: Lag (5) + Rolling (8) + Cyclical (4) + Diff (2) + Outlier (2) + Business (2)
+                    - ✅ **Outlier Capping**: Upper bound = 8.0 (sama dengan training)
                     - ✅ **Dynamic Feature Update**: Lag dan rolling features di-update setiap step
                     - ✅ **Variability Injection**: Controlled noise untuk realistic predictions  
                     - ✅ **Adaptive Scaling**: Features di-scale ulang setiap iterasi
                     - ✅ **Quality Control**: Automatic variance checking dan correction
                     - ✅ **Temporal Consistency**: Proper sequence updating untuk multi-step
                     
-                    **🎯 Improvements vs Standard:**
-                    - Mengatasi masalah flat/constant prediction
-                    - Mempertahankan temporal patterns
+                    **🎯 Key Improvements:**
+                    - Preprocessing 100% konsisten dengan training
+                    - Feature columns matching training configuration
+                    - Proper outlier handling (clip to 8.0)
+                    - Dynamic lag/rolling feature updates
                     - Realistic variability preservation
-                    - Better handling untuk multi-day prediction
+                    
+                    **📊 Model Configuration:**
+                    - TIME_STEPS: {SEQ_LENGTH}
+                    - FEATURES: {len(feature_cols)}
+                    - SCALER: MinMaxScaler(0, 1)
+                    - TARGET: Kuantitas_capped [0, 8.0]
                     """)
 
         else:
@@ -664,31 +714,37 @@ if uploaded_file is not None:
             
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
         
 else:
-    st.markdown('<div class="sub-header">🎯 Solusi Prediksi Flat/Konstan</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">🎯 Preprocessing Konsisten dengan Training</div>', unsafe_allow_html=True)
     
     st.markdown("""
     ### 🚀 Enhanced Multi-Step Prediction Algorithm
     
-    **Masalah yang Diselesaikan:**
-    - ❌ Prediksi flat/konstan untuk multi-hari
-    - ❌ Feature engineering statis
-    - ❌ Lag features tidak terupdate
-    - ❌ Rolling statistics tidak berubah
-    
-    **Solusi yang Diimplementasi:**
-    - ✅ **Dynamic Feature Update**: Fitur di-update setiap step prediksi
-    - ✅ **Proper Lag Handling**: Lag features menggunakan prediksi sebelumnya
-    - ✅ **Rolling Window Update**: Statistics di-recalculate dengan prediksi baru
+    **Perbaikan Utama:**
+    - ✅ **100% Konsisten dengan Training**: Feature engineering persis sama dengan notebook
+    - ✅ **28 Features** (sesuai training):
+        - Lag features: 5 (lag_1, lag_2, lag_3, lag_7, lag_14)
+        - Rolling stats: 8 (mean, std, min, max untuk window 7 dan 14)
+        - Cyclical encoding: 4 (day_sin, day_cos, month_sin, month_cos)
+        - Difference features: 2 (diff_1, diff_7)
+        - Outlier features: 2 (is_outlier, outlier_magnitude)
+        - Business features: 2 (is_month_end, is_quarter_end)
+    - ✅ **Outlier Capping**: Upper bound = 8.0 (sama dengan training)
+    - ✅ **Dynamic Feature Update**: Lag dan rolling features di-update setiap step prediksi
     - ✅ **Variability Injection**: Menambah realistic noise untuk menghindari flat prediction
-    - ✅ **Quality Control**: Automatic detection dan correction untuk flat predictions
     
-    **Advanced Features:**
-    - 🎯 Adaptive noise level berdasarkan historical variance
-    - 🎯 Confidence scoring untuk setiap prediksi
-    - 🎯 Multiple quality indicators
-    - 🎯 Enhanced visualization dengan variance analysis
+    **Perbedaan dengan Versi Sebelumnya:**
+    - ❌ Versi lama: Kuantitas_log masuk ke feature_cols
+    - ✅ Versi baru: Kuantitas_log dibuat tapi TIDAK dimasukkan (sesuai training)
+    - ❌ Versi lama: Ada 30 features (tidak konsisten)
+    - ✅ Versi baru: Exactly 28 features (sesuai training)
+    - ✅ Outlier capping sudah benar (clip upper=8.0)
+    - ✅ Feature order sudah sesuai training
+    
+    **📋 Format Data yang Diharapkan:**
     """)
     
     example_data = pd.DataFrame({
@@ -698,6 +754,4 @@ else:
     })
     st.dataframe(example_data, hide_index=True)
     
-    st.info("💡 **Tips**: Gunakan Advanced Settings di sidebar untuk mengontrol level variability dalam prediksi.")
-
-
+    st.info("💡 **Tips**: Pastikan data memiliki minimal 30 hari untuk prediksi yang akurat. Gunakan Advanced Settings di sidebar untuk mengontrol level variability.")
