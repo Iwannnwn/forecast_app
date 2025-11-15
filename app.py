@@ -62,7 +62,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">🏭 PREDIKSI PERMINTAAN PRODUK MIXTRO<br><small>PT PETROKIMIA GRESIK/small></div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🏭 PREDIKSI PERMINTAAN PRODUK MIXTRO<br><small>PT PETROKIMIA GRESIK</div>', unsafe_allow_html=True)
 
 if not TF_AVAILABLE or not SKLEARN_AVAILABLE:
     st.error("❌ Dependencies tidak lengkap!")
@@ -699,4 +699,5 @@ else:
     st.dataframe(example_data, hide_index=True)
     
     st.info("💡 **Tips**: Gunakan Advanced Settings di sidebar untuk mengontrol level variability dalam prediksi.")
+
 
