@@ -645,19 +645,19 @@ if uploaded_file is not None:
                 # Technical info
                 with st.expander("🔧 Technical Information"):
                     st.markdown("""
-                    **🚀 Enhanced Multi-Step Algorithm:**
-                    - ✅ **Dynamic Feature Update**: Lag dan rolling features di-update setiap step
-                    - ✅ **Variability Injection**: Controlled noise untuk realistic predictions  
-                    - ✅ **Adaptive Scaling**: Features di-scale ulang setiap iterasi
-                    - ✅ **Quality Control**: Automatic variance checking dan correction
-                    - ✅ **Temporal Consistency**: Proper sequence updating untuk multi-step
+                    # **🚀 Enhanced Multi-Step Algorithm:**
+                    # - ✅ **Dynamic Feature Update**: Lag dan rolling features di-update setiap step
+                    # - ✅ **Variability Injection**: Controlled noise untuk realistic predictions  
+                    # - ✅ **Adaptive Scaling**: Features di-scale ulang setiap iterasi
+                    # - ✅ **Quality Control**: Automatic variance checking dan correction
+                    # - ✅ **Temporal Consistency**: Proper sequence updating untuk multi-step
                     
-                    **🎯 Improvements vs Standard:**
-                    - Mengatasi masalah flat/constant prediction
-                    - Mempertahankan temporal patterns
-                    - Realistic variability preservation
-                    - Better handling untuk multi-day prediction
-                    """)
+                    # **🎯 Improvements vs Standard:**
+                    # - Mengatasi masalah flat/constant prediction
+                    # - Mempertahankan temporal patterns
+                    # - Realistic variability preservation
+                    # - Better handling untuk multi-day prediction
+                    # """)
 
         else:
             st.warning(f"⚠️ Butuh minimal {SEQ_LENGTH} hari data untuk prediksi akurat.")
@@ -668,28 +668,28 @@ if uploaded_file is not None:
 else:
     st.markdown('<div class="sub-header">🎯 Solusi Prediksi Flat/Konstan</div>', unsafe_allow_html=True)
     
-    st.markdown("""
-    ### 🚀 Enhanced Multi-Step Prediction Algorithm
+    # st.markdown("""
+    # ### 🚀 Enhanced Multi-Step Prediction Algorithm
     
-    **Masalah yang Diselesaikan:**
-    - ❌ Prediksi flat/konstan untuk multi-hari
-    - ❌ Feature engineering statis
-    - ❌ Lag features tidak terupdate
-    - ❌ Rolling statistics tidak berubah
+    # **Masalah yang Diselesaikan:**
+    # - ❌ Prediksi flat/konstan untuk multi-hari
+    # - ❌ Feature engineering statis
+    # - ❌ Lag features tidak terupdate
+    # - ❌ Rolling statistics tidak berubah
     
-    **Solusi yang Diimplementasi:**
-    - ✅ **Dynamic Feature Update**: Fitur di-update setiap step prediksi
-    - ✅ **Proper Lag Handling**: Lag features menggunakan prediksi sebelumnya
-    - ✅ **Rolling Window Update**: Statistics di-recalculate dengan prediksi baru
-    - ✅ **Variability Injection**: Menambah realistic noise untuk menghindari flat prediction
-    - ✅ **Quality Control**: Automatic detection dan correction untuk flat predictions
+    # **Solusi yang Diimplementasi:**
+    # - ✅ **Dynamic Feature Update**: Fitur di-update setiap step prediksi
+    # - ✅ **Proper Lag Handling**: Lag features menggunakan prediksi sebelumnya
+    # - ✅ **Rolling Window Update**: Statistics di-recalculate dengan prediksi baru
+    # - ✅ **Variability Injection**: Menambah realistic noise untuk menghindari flat prediction
+    # - ✅ **Quality Control**: Automatic detection dan correction untuk flat predictions
     
-    **Advanced Features:**
-    - 🎯 Adaptive noise level berdasarkan historical variance
-    - 🎯 Confidence scoring untuk setiap prediksi
-    - 🎯 Multiple quality indicators
-    - 🎯 Enhanced visualization dengan variance analysis
-    """)
+    # **Advanced Features:**
+    # - 🎯 Adaptive noise level berdasarkan historical variance
+    # - 🎯 Confidence scoring untuk setiap prediksi
+    # - 🎯 Multiple quality indicators
+    # - 🎯 Enhanced visualization dengan variance analysis
+    # """)
     
     example_data = pd.DataFrame({
         'tanggal': ['01/01/2024', '02/01/2024', '03/01/2024'],
@@ -699,5 +699,6 @@ else:
     st.dataframe(example_data, hide_index=True)
     
     st.info("💡 **Tips**: Gunakan Advanced Settings di sidebar untuk mengontrol level variability dalam prediksi.")
+
 
 
