@@ -666,7 +666,8 @@ if uploaded_file is not None:
         st.error(f"❌ Error: {str(e)}")
         
 else:
-    st.markdown('<div class="sub-header">🎯 Solusi Prediksi Flat/Konstan</div>', unsafe_allow_html=True)
+    # st.markdown('<div class="sub-header">🎯 Solusi Prediksi Flat/Konstan</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">🎯 PREDICTION SECTION</div>', unsafe_allow_html=True)
     
     # st.markdown("""
     # ### 🚀 Enhanced Multi-Step Prediction Algorithm
@@ -699,6 +700,7 @@ else:
     st.dataframe(example_data, hide_index=True)
     
     st.info("💡 **Tips**: Gunakan Advanced Settings di sidebar untuk mengontrol level variability dalam prediksi.")
+
 
 
 
